@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/paula-mixer-workbench.png" alt="Paula Mixer on Amiga Workbench" width="500">
+  <img src="not-yet.png" alt="Paula Mixer on Amiga Workbench" width="500">
 </p>
 
 # Paula Audio over HDMI — Hardware-Validated
