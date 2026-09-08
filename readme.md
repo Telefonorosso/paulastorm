@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/paula-mixer-workbench.png" alt="Paula Mixer on Amiga Workbench" width="500">
+</p>
+
 # Paula Audio over HDMI — Hardware-Validated
 
 **Real Amiga Paula audio is now being reproduced through the Raspberry Pi HDMI output on PiStorm Classic.** The implementation runs alongside Emu68 on a Raspberry Pi 3A+ and requires no Linux, external ADC, or HDMI audio injector.
