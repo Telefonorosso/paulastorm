@@ -49,40 +49,6 @@ The milestone includes the native AmigaOS **PaulaMixer V2** GUI and a live atomi
 
 The settings bank uses an atomic request/applied protocol so the GUI can update the renderer without stopping audio. The existing V2 GUI and runtime ABI are preserved unchanged by CACHE-FIX2.
 
-## PaulaProbe diagnostics
-
-The companion AmigaOS utility **PaulaProbe** provides live diagnostics for captured and applied register writes, DMA state, channel parameters, sample-cache activity, PCM output and recovery behavior.
-
-CACHE-FIX2 extends the diagnostics with explicit cache-recovery counters:
-
-* `zero` — attempted sample reads that encountered a missing page. With transactional rendering these attempts can be rolled back before entering committed audio.
-* `recovered-pages` — successful page publications following renderer misses.
-* `wait frames` — PCM frames whose speculative source rendering was rolled back.
-* `wait recoveries` — transitions from a cache-wait state back to successful rendering.
-* `prefetch-pages` — missing pages encountered by lookahead sweeps.
-
-The previous pending-queue diagnostic underflow has also been fixed: an empty queue now reports `pending=0` instead of `4294967295`.
-
-## Hardware validation
-
-The complete Paula → software renderer → HDMI path remains hardware-validated on **PiStorm Classic / Raspberry Pi 3A+**. The earlier milestone already demonstrated sustained live music playback through HDMI with zero dropped register events and zero HDMI MAI errors while the physical Paula analogue output remained active.
-
-CACHE-FIX2 was then tested specifically against the cold-cache / first-playback problem. In the supplied hardware capture, the first playback interval exercised the new recovery mechanism:
-
-| Metric | Observed interval |
-| --- | ---: |
-| Attempted synthetic-zero reads | +1,438 |
-| Cache wait frames | +274 |
-| Wait recoveries | +1 |
-| Prefetch page encounters | +357 |
-| Dropped register events | 0 |
-| Stale cache publications | 0 |
-| HDMI MAI errors | 0 |
-
-On the following interval the cache had reached 820 ready pages and playback continued with **no additional zero substitutions and no additional wait frames**. Later captures retained the same zero/wait totals while audio continued. The hardware listening test reported that the first-playback digital clipping heard before CACHE-FIX2 had disappeared.
-
-For comparison, the preceding diagnostic build reproduced the problem with **27,555 synthetic-zero reads in a single first-playback interval**. The two captures are separate test runs and therefore should be treated as behavioral evidence rather than a controlled benchmark.
-
 ## Current scope and limitations
 
 This is a hardware-validated experimental implementation and a stable development baseline, not a claim of cycle-accurate Paula emulation.
@@ -97,8 +63,5 @@ The current archive contains the complete PaulaMixer V2 source overlay required 
 
 **Base commit:** `9b4379a5c5dbf7f12f5e10cfe81a96b872e2426f`  
 **Target:** `raspi64` / `pistorm-classic`  
-**Milestone:** `Emu68-9b4379a-PAULAMIXER-V2-CACHE-FIX2-HARDWARE-VALIDATED-MILESTONE.zip`
-
-The regression coverage includes cache behavior and invalidation races, diagnostic counters, PaulaMixer runtime write/readback, cold-cache transactional rollback, recovery fade behavior, virtual-IRQ rollback and bounded lookahead across one-shot-to-loop transitions. The integrated firmware also compiled successfully in the PiStorm Classic cross-build environment before hardware validation.
 
 The implementation remains entirely bare-metal. Existing Amiga software continues to program the real Paula normally while Emu68 mirrors the resulting audio path to HDMI in parallel.
