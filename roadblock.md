@@ -1,72 +1,115 @@
-```markdown
-## Framethrower → Emu68 HDMI Audio: Current Technical Status
+## Framethrower → Emu68 HDMI Audio — Current Technical Status
 
-The current goal is to transport **real Paula audio activity** from Framethrower Denise to Emu68 and output it over HDMI, while keeping **CPU1 completely free** and avoiding the previous software-Paula/Chip-RAM mirror architecture.
+The current goal is to transport **real Paula audio activity** from Framethrower Denise to Emu68 and output it through HDMI, while keeping **CPU1 completely free** and avoiding the previous software-Paula / Chip-RAM mirror architecture.
 
-The intended path is:
+### Target architecture
 
-`Paula AUDxDAT → Framethrower passive snoop → CSI-2 → UNICAM metadata/data DMA → Emu68 Core0 → HDMI MAI`
+`Real Paula AUDxDAT`
+→ `Framethrower passive snoop`
+→ `CSI-2`
+→ `Emu68 UNICAM data/metadata DMA`
+→ `Core0 receiver / renderer`
+→ `HDMI MAI`
 
-### Framethrower side
+No Paula emulator is involved in the intended final path, and no duplicate Chip RAM sample fetching is required.
+
+## Framethrower side
 
 The capture side is currently considered stable.
 
-Framethrower uses **PIO2 with four passive snoopers**, one per `AUDxDAT` register:
+Framethrower uses **PIO2 with four passive snoopers**, one for each Paula audio data register:
 
-- `AUD0DAT $DFF0AA`
-- `AUD1DAT $DFF0BA`
-- `AUD2DAT $DFF0CA`
-- `AUD3DAT $DFF0DA`
+* `AUD0DAT $DFF0AA`
+* `AUD1DAT $DFF0BA`
+* `AUD2DAT $DFF0CA`
+* `AUD3DAT $DFF0DA`
 
-PIO0 remains dedicated to video and PIO1 remains unchanged for the existing updater/RGA path.
+PIO0 remains dedicated to video, while PIO1 remains unchanged for the existing updater / RGA path.
 
-The MIPI sender was modified to support a dynamic CSI-2 Data ID, Word Count and ECC. Video remains DT `0x22`, and the validated audio transport currently uses a small DT `0x12` packet on **VC0 inside the existing video CSI frame**.
+The MIPI sender was extended to support:
 
-The working transport format is:
+* dynamic CSI-2 Data ID
+* dynamic Word Count
+* dynamic CSI-2 header ECC
 
-`FS VC0 → DT0x12 audio packet → DT0x22 video lines → FE VC0`
+The normal video stream remains `DT 0x22` RGB565.
 
-This configuration is important because previous attempts using VC1 or separate CSI frames produced immediate video corruption, while the current VC0/DT0x12 arrangement is visually stable.
+### Current stable CSI transport
 
-The audio payload currently starts with the `FTA1` signature and carries one real captured Paula event per packet.
+The only audio transport tested so far that does **not** corrupt video is:
 
-### Emu68 side
+`FS VC0`
+→ `DT 0x12 audio packet`
+→ `DT 0x22 RGB565 video lines`
+→ `FE VC0`
 
-Emu68 configures UNICAM with DT `0x22` as the image format, with the expectation that the non-matching DT `0x12` traffic is routed to the alternate/data DMA path.
+Attempts using VC1 or separate CSI frames caused immediate video corruption.
 
-A Core0-only receiver scans the metadata/data buffer for `FTA1` packets and feeds a new HDMI audio backend. No CPU1 audio loop is used, and the old Paula emulator is not part of this path.
+The current audio packet begins with the `FTA1` signature and carries one real captured Paula event.
 
-The new backend reuses the same general MAI/IEC958 register programming model as the previously hardware-validated HDMI audio POC, but is serviced from Core0.
+This STEP-E transport is therefore currently frozen and should not be modified without new evidence.
 
-### Current blocker
+## Emu68 side
 
-At the moment, the new Framethrower path is still **silent on HDMI**.
+Emu68 configures UNICAM with `DT 0x22` as the image format.
 
-A recent apparent success was invalid: `config.txt` was still loading the old hardware-validated `emu68.img.gz`, which uses the previous software-Paula routing. Once the correct newly-built image was loaded, HDMI audio was again silent.
+The working assumption is that non-matching `DT 0x12` traffic can be received through the UNICAM alternate/data DMA path without entering the image framebuffer.
 
-This means that moving `hdmi_audio_ft_init()` to the final boot gate immediately before `M68K_StartEmu()` did **not** solve the problem.
+A Core0-only receiver scans the alternate buffer for `FTA1` packets and forwards the captured events to a new HDMI audio backend.
 
-The known-good old monolithic image still produces HDMI audio on the same hardware, so the sink, cable, monitor and basic HDMI capability are known-good.
+CPU1 remains on the normal Emu68 path and is **not used for audio**.
 
-### What is currently considered proven
+## Current blocker
 
-- Passive Framethrower AUDxDAT snooping does not disturb video.
-- Dynamic MIPI headers/ECC do not disturb video.
-- VC0 + DT0x12 coexistence with DT0x22 video is stable.
-- CPU1 is not required by design for the new path.
-- The problem is now most likely on the Emu68 receive/output side rather than in the Framethrower video transport.
+The new Framethrower → Core0 → HDMI path is still **silent**.
 
-### Next useful comparison
+A recent apparent success was invalid: `config.txt` was still loading the old hardware-validated `emu68.img.gz`, which contains the previous software-Paula HDMI path.
 
-The next step should be a strict source-level comparison between the **exact hardware-validated old HDMI audio implementation** and the current `hdmi_audio_ft` path, including:
+When the newly-built Framethrower image was actually loaded, HDMI audio remained silent.
 
-- HDMI/MAI clock setup
-- register initialization order
-- InfoFrame / IEC958 setup
-- FIFO enable/reset sequencing
-- exact point in boot where the audio block is enabled
-- whether some later video/platform init resets HDMI audio state
-- differences between CPU1 execution context and the new Core0 execution context
+This also explains why PaulaMixer did not detect its expected backend during that test.
 
-Until that comparison is complete, the Framethrower STEP-E transport should remain frozen, because it is currently the only audio-packet arrangement that preserves clean video.
-```
+## What has already been ruled out
+
+Moving `hdmi_audio_ft_init()` to the final boot gate immediately before:
+
+`M68K_StartEmu(0, NULL)`
+
+did **not** restore HDMI audio.
+
+A direct synthetic 10-second tone written through the new Core0 backend also remained silent.
+
+The known-good older monolithic Emu68 image still produces HDMI audio correctly on exactly the same hardware.
+
+Therefore the HDMI sink, cable and display are known-good.
+
+## Current known-good facts
+
+* Passive `AUDxDAT` snooping does not disturb Framethrower video.
+* PIO2 capture is stable.
+* Dynamic CSI-2 headers and ECC are stable.
+* `VC0 + DT0x12` coexists cleanly with `VC0 + DT0x22` video.
+* VC1 and separate audio CSI frames are currently known-bad for video.
+* CPU1 is intentionally not used by the new architecture.
+* The old software-Paula HDMI implementation remains hardware-validated.
+* The new Core0 HDMI implementation remains silent.
+
+## Most useful next step
+
+The next useful investigation is a **strict source-level comparison** between the exact hardware-validated HDMI implementation and the current `hdmi_audio_ft` backend.
+
+In particular:
+
+* HDMI clock setup
+* HSM / pixel clock dependencies
+* MAI clock ratio
+* MAI reset and enable sequence
+* IEC958 configuration
+* HDMI Audio InfoFrame programming
+* FIFO initialization
+* register write ordering
+* initialization timing
+* possible HDMI/video reinitialization after audio setup
+* differences between the old CPU1 execution context and the new Core0 execution context
+
+At this point it would be preferable **not to change the Framethrower STEP-E transport**, since it is the first configuration that carries the experimental audio packet without causing any visible video regression.
